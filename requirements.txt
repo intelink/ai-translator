@@ -1,0 +1,5 @@
+requests
+deep-translator
+langdetect
+pypdf
+python-docx
