@@ -1,0 +1,18 @@
+[Unit]
+Description=AI Translator (port 8002, behind Apache /translator/)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/ai-translator
+Environment=PORT=8002
+Environment=BASE_PATH=/translator
+ExecStart=/opt/ai-translator/venv/bin/python /opt/ai-translator/translatev5.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

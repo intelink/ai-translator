@@ -12,10 +12,12 @@ from urllib.parse import urlparse, parse_qs
 from email.parser import BytesParser
 from email.policy import default
 
-PORT_DEFAULT = 8002
+PORT_DEFAULT = int(os.environ.get('PORT', '8002'))
 MAX_PARALLEL = 4
 CHUNK_TARGET = 3000          # caractere țintă per chunk
 KEEP_ALIVE = "30m"
+# Prefix pentru reverse proxy (ex. "/translator"). Gol pentru servire la root.
+BASE_PATH = os.environ.get('BASE_PATH', '').rstrip('/')
 JOB_QUEUES = {}
 STOP_FLAGS = {}
 OUTPUT_FILES = {}
@@ -318,7 +320,7 @@ class TranslateHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', 'text/html; charset=utf-8')
             self.end_headers()
-            self.wfile.write(HTML_UI.encode('utf-8'))
+            self.wfile.write(HTML_UI.replace('__BASE_PATH__', BASE_PATH).encode('utf-8'))
         elif parsed_path.path == '/models':
             qs = parse_qs(parsed_path.query)
             ip = qs.get('ip', ['127.0.0.1'])[0]
@@ -570,11 +572,12 @@ HTML_UI = """<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AI Translat
     </div>
 </div>
 <script>
+    const BASE = '__BASE_PATH__';
     let currentJobId = null;
     async function fetchModels() {
         const ip = document.getElementById('ip').value;
         try {
-            const res = await fetch(`/models?ip=${ip}&port=11434`);
+            const res = await fetch(`${BASE}/models?ip=${ip}&port=11434`);
             const models = await res.json();
             const sel = document.getElementById('model');
             sel.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
@@ -603,13 +606,13 @@ HTML_UI = """<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AI Translat
         fd.append('glossary', document.getElementById('gloss').value);
         fd.append('file', file);
 
-        const res = await fetch('/translate', { method: 'POST', body: fd });
+        const res = await fetch(`${BASE}/translate`, { method: 'POST', body: fd });
         const data = await res.json();
         if (data.error) { alert(data.error); return; }
         currentJobId = data.job_id;
         document.getElementById('status').innerText = `Job ${data.job_id} — ${data.chunks} chunks · ${data.engine} ${data.auto_detect ? '(auto-detect)' : ''}`;
 
-        const es = new EventSource(`/status?job_id=${currentJobId}`);
+        const es = new EventSource(`${BASE}/status?job_id=${currentJobId}`);
         es.onmessage = (e) => {
             const log = document.getElementById('log');
             log.innerText += e.data + "\\n";
@@ -625,9 +628,9 @@ HTML_UI = """<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AI Translat
     }
     async function stop() {
         if(!currentJobId) return;
-        await fetch('/stop', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job_id: currentJobId})});
+        await fetch(`${BASE}/stop`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job_id: currentJobId})});
     }
-    function download(t) { if(currentJobId) window.location.href=`/download_file?job_id=${currentJobId}&type=${t}`; }
+    function download(t) { if(currentJobId) window.location.href=`${BASE}/download_file?job_id=${currentJobId}&type=${t}`; }
     window.addEventListener('load', () => { onEngineChange(); fetchModels(); });
 </script>
 </body></html>
@@ -638,6 +641,7 @@ def run():
     print(f"--- SERVER TRADUCERE ACTIV PE PORTUL {PORT_DEFAULT} ---")
     print(f"    paralelism={MAX_PARALLEL}, chunk_target={CHUNK_TARGET}, keep_alive={KEEP_ALIVE}")
     print(f"    langdetect={'YES' if HAS_LANGDETECT else 'NO'}")
+    print(f"    base_path={BASE_PATH or '(root)'}")
     server = ThreadingHTTPServer(('0.0.0.0', PORT_DEFAULT), TranslateHandler)
     server.serve_forever()
 
